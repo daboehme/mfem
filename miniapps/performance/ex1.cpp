@@ -30,6 +30,12 @@
 //               optional connection to the GLVis tool for visualization.
 
 #include "mfem-performance.hpp"
+
+#ifdef MFEM_USE_CALIPER
+#include <caliper/cali.h>
+#include <caliper/cali-manager.h>
+#endif
+
 #include <fstream>
 #include <iostream>
 
@@ -72,6 +78,7 @@ int main(int argc, char *argv[])
    bool perf = true;
    bool matrix_free = true;
    bool visualization = 1;
+   const char* caliper_config = "";
 
    OptionsParser args(argc, argv);
    args.AddOption(&mesh_file, "-m", "--mesh",
@@ -97,6 +104,8 @@ int main(int argc, char *argv[])
    args.AddOption(&visualization, "-vis", "--visualization", "-no-vis",
                   "--no-visualization",
                   "Enable or disable GLVis visualization.");
+   args.AddOption(&caliper_config, "-P", "--caliper-config",
+                  "Caliper performance profiling configuration");
    args.Parse();
    if (!args.Good())
    {
@@ -123,6 +132,17 @@ int main(int argc, char *argv[])
       mfem_error("Invalid Preconditioner specified");
       return 3;
    }
+
+#ifdef MFEM_USE_CALIPER
+   cali_init();
+
+   cali::ConfigManager mgr(caliper_config);
+   if (mgr.error())
+      std::cerr << "Caliper config error: " << mgr.error_msg() << std::endl;
+   mgr.start();
+
+   CALI_MARK_FUNCTION_BEGIN;
+#endif
 
    // See class BasisType in fem/fe_coll.hpp for available basis types
    int basis = BasisType::GetType(basis_type[0]);
@@ -264,6 +284,10 @@ int main(int argc, char *argv[])
                   "cannot use LOR preconditioner with static condensation");
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_BEGIN("Assembling bilinear form");
+#endif
+
    cout << "Assembling the bilinear form ..." << flush;
    tic_toc.Clear();
    tic_toc.Start();
@@ -295,6 +319,10 @@ int main(int argc, char *argv[])
    tic_toc.Stop();
    cout << " done, " << tic_toc.RealTime() << "s." << endl;
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Assembling bilinear form");
+#endif
+
    // 12. Solve the system A X = B with CG. In the standard case, use a simple
    //     symmetric Gauss-Seidel preconditioner.
 
@@ -312,6 +340,10 @@ int main(int argc, char *argv[])
       cout << "Size of linear system: " << A.Height() << endl;
       a_oper = &A;
    }
+
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_BEGIN("Assembling preconditioning matrix");
+#endif
 
    // Setup the matrix used for preconditioning
    cout << "Assembling the preconditioning matrix ..." << flush;
@@ -344,6 +376,11 @@ int main(int argc, char *argv[])
    tic_toc.Stop();
    cout << " done, " << tic_toc.RealTime() << "s." << endl;
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Assembling preconditioning matrix");
+   CALI_MARK_BEGIN("Solve");
+#endif
+
    // Solve with CG or PCG, depending if the matrix A_pc is available
    if (pc_choice != NONE)
    {
@@ -355,6 +392,11 @@ int main(int argc, char *argv[])
       CG(*a_oper, B, X, 1, 500, 1e-12, 0.0);
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Solve");
+   CALI_MARK_BEGIN("RecoverSolution");
+#endif
+
    // 13. Recover the solution as a finite element grid function.
    if (perf && matrix_free)
    {
@@ -365,6 +407,11 @@ int main(int argc, char *argv[])
       a->RecoverFEMSolution(X, *b, x);
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("RecoverSolution");
+   CALI_MARK_BEGIN("Save");
+#endif
+
    // 14. Save the refined mesh and the solution. This output can be viewed later
    //     using GLVis: "glvis -m refined.mesh -g sol.gf".
    ofstream mesh_ofs("refined.mesh");
@@ -373,6 +420,10 @@ int main(int argc, char *argv[])
    ofstream sol_ofs("sol.gf");
    sol_ofs.precision(8);
    x.Save(sol_ofs);
+
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Save");
+#endif
 
    // 15. Send the solution by socket to a GLVis server.
    if (visualization)
@@ -396,6 +447,11 @@ int main(int argc, char *argv[])
    delete mesh_lor;
    if (order > 0) { delete fec; }
    delete mesh;
+
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_FUNCTION_END;
+   mgr.flush();
+#endif
 
    return 0;
 }

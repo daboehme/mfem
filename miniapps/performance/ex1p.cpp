@@ -30,6 +30,13 @@
 //               optional connection to the GLVis tool for visualization.
 
 #include "mfem-performance.hpp"
+
+#ifdef MFEM_USE_CALIPER
+#include <caliper/cali.h>
+#include <caliper/cali-manager.h>
+#include <caliper/cali-mpi.h>
+#endif
+
 #include <fstream>
 #include <iostream>
 
@@ -79,6 +86,7 @@ int main(int argc, char *argv[])
    bool perf = true;
    bool matrix_free = true;
    bool visualization = 1;
+   const char* caliper_config;
 
    OptionsParser args(argc, argv);
    args.AddOption(&mesh_file, "-m", "--mesh",
@@ -106,6 +114,9 @@ int main(int argc, char *argv[])
    args.AddOption(&visualization, "-vis", "--visualization", "-no-vis",
                   "--no-visualization",
                   "Enable or disable GLVis visualization.");
+   args.AddOption(&caliper_config, "-P", "--caliper-config", 
+                  "Caliper performance profiling configuration");
+
    args.Parse();
    if (!args.Good())
    {
@@ -143,6 +154,18 @@ int main(int argc, char *argv[])
       mfem_error("Invalid Preconditioner specified");
       return 3;
    }
+
+#ifdef MFEM_USE_CALIPER
+   cali_mpi_init();
+
+   cali::ConfigManager mgr(caliper_config);
+   if (mgr.error())
+      std::cerr << "Caliper config error: " << mgr.error_msg() << std::endl;
+   mgr.start();
+
+   CALI_MARK_FUNCTION_BEGIN;
+   CALI_MARK_BEGIN("Read mesh");
+#endif
 
    // See class BasisType in fem/fe_coll.hpp for available basis types
    int basis = BasisType::GetType(basis_type[0]);
@@ -187,6 +210,11 @@ int main(int argc, char *argv[])
       }
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Read mesh");
+   CALI_MARK_BEGIN("Refine mesh");
+#endif
+
    // 5. Refine the serial mesh on all processors to increase the resolution. In
    //    this example we do 'ref_levels' of uniform refinement. We choose
    //    'ref_levels' to be the largest number that gives a final mesh with no
@@ -227,6 +255,10 @@ int main(int argc, char *argv[])
       MFEM_VERIFY(pc_choice != LOR, "triangle and tet meshes do not support"
                   " the LOR preconditioner yet");
    }
+
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Refine mesh");
+#endif
 
    // 7. Define a parallel finite element space on the parallel mesh. Here we
    //    use continuous Lagrange finite elements of the specified order. If
@@ -389,6 +421,10 @@ int main(int argc, char *argv[])
       a_oper = &A;
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_BEGIN("Assembling preconditioning matrix");
+#endif
+
    // Setup the matrix used for preconditioning
    if (myid == 0)
    {
@@ -425,6 +461,11 @@ int main(int argc, char *argv[])
       cout << " done, " << tic_toc.RealTime() << "s." << endl;
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Assembling preconditioning matrix");
+   CALI_MARK_BEGIN("Solve");
+#endif
+
    // Solve with CG or PCG, depending if the matrix A_pc is available
    CGSolver *pcg;
    pcg = new CGSolver(MPI_COMM_WORLD);
@@ -449,6 +490,10 @@ int main(int argc, char *argv[])
    tic_toc.Stop();
    delete amg;
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Solve");
+#endif
+
    if (myid == 0)
    {
       // Note: In the pcg algorithm, the number of operator Mult() calls is
@@ -468,6 +513,10 @@ int main(int argc, char *argv[])
       a->RecoverFEMSolution(X, *b, x);
    }
 
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_BEGIN("Save");
+#endif
+
    // 16. Save the refined mesh and the solution in parallel. This output can
    //     be viewed later using GLVis: "glvis -np <np> -m mesh -g sol".
    {
@@ -483,6 +532,10 @@ int main(int argc, char *argv[])
       sol_ofs.precision(8);
       x.Save(sol_ofs);
    }
+
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_END("Save");
+#endif
 
    // 17. Send the solution by socket to a GLVis server.
    if (visualization)
@@ -508,6 +561,11 @@ int main(int argc, char *argv[])
    if (order > 0) { delete fec; }
    delete pmesh;
    delete pcg;
+
+#ifdef MFEM_USE_CALIPER
+   CALI_MARK_FUNCTION_END;
+   mgr.flush();
+#endif
 
    MPI_Finalize();
 
