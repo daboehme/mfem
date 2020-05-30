@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
    args.AddOption(&visualization, "-vis", "--visualization", "-no-vis",
                   "--no-visualization",
                   "Enable or disable GLVis visualization.");
-   args.AddOption(&caliper_config, "-P", "--caliper-config", 
+   args.AddOption(&caliper_config, "-P", "--caliper-config",
                   "Caliper performance profiling configuration");
 
    args.Parse();
@@ -160,7 +160,9 @@ int main(int argc, char *argv[])
 
    cali::ConfigManager mgr(caliper_config);
    if (mgr.error())
+   {
       std::cerr << "Caliper config error: " << mgr.error_msg() << std::endl;
+   }
    mgr.start();
 
    CALI_MARK_FUNCTION_BEGIN;

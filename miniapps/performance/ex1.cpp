@@ -138,7 +138,9 @@ int main(int argc, char *argv[])
 
    cali::ConfigManager mgr(caliper_config);
    if (mgr.error())
+   {
       std::cerr << "Caliper config error: " << mgr.error_msg() << std::endl;
+   }
    mgr.start();
 
    CALI_MARK_FUNCTION_BEGIN;
