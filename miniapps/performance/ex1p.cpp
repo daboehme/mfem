@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
    bool perf = true;
    bool matrix_free = true;
    bool visualization = 1;
-   const char* caliper_config;
+   const char* caliper_config = "";
 
    OptionsParser args(argc, argv);
    args.AddOption(&mesh_file, "-m", "--mesh",
